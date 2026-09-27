@@ -186,4 +186,12 @@ public interface TaskScheduler {
 	 * @return the number of active async tasks
 	 */
 	public int getActiveAsyncTasks(Plugin plugin);
+
+	/**
+	 * Cancels all tasks that have been scheduled by the given plugin.
+	 * 
+	 * @param plugin
+	 *            the plugin, not <code>null</code>
+	 */
+	public void cancelAllTasks(Plugin plugin);
 }

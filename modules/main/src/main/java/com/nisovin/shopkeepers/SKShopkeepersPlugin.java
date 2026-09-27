@@ -288,17 +288,18 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 			return;
 		}
 
-		// Refuse to run on server platforms that we do not support yet:
-		// This has to happen before anything schedules tasks or registers listeners.
-		if (ServerUtils.isFolia() && !FOLIA_SUPPORT_COMPLETE) {
-			this.unsupportedServerPlatform = true;
+		// Initialize the task scheduler for the current server platform:
+		// This has to happen before the first task is scheduled. It also has to happen before we
+		// check whether the server platform is supported below, so that the disable path already
+		// uses the correct scheduler.
+		this.incompatibleServer = !TaskSchedulers.init();
+		if (this.incompatibleServer) {
 			return;
 		}
 
-		// Initialize the task scheduler for the current server platform:
-		// This has to happen before the first task is scheduled.
-		this.incompatibleServer = !TaskSchedulers.init();
-		if (this.incompatibleServer) {
+		// Refuse to run on server platforms that we do not support yet:
+		if (ServerUtils.isFolia() && !FOLIA_SUPPORT_COMPLETE) {
+			this.unsupportedServerPlatform = true;
 			return;
 		}
 
@@ -538,6 +539,21 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 
 	@Override
 	public void onDisable() {
+		try {
+			this.disableComponents();
+		} finally {
+			// These steps must always run, even if the cleanup above failed. Otherwise the plugin
+			// would be left in a half-disabled state, with the API still enabled and the plugin
+			// instance still being treated as active.
+			HandlerList.unregisterAll(this);
+			TaskSchedulers.get().cancelAllTasks(this);
+
+			InternalShopkeepersAPI.disable();
+			plugin = null;
+		}
+	}
+
+	private void disableComponents() {
 		// Wait for async tasks to complete:
 		SchedulerUtils.awaitAsyncTasksCompletion(
 				this,
@@ -626,12 +642,6 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 		if (Compat.hasProvider()) {
 			Compat.getProvider().onDisable();
 		}
-
-		HandlerList.unregisterAll(this);
-		Bukkit.getScheduler().cancelTasks(this);
-
-		InternalShopkeepersAPI.disable();
-		plugin = null;
 	}
 
 	/**

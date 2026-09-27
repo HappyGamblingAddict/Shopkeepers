@@ -142,6 +142,16 @@ public class FoliaTaskScheduler implements TaskScheduler {
 		return activeAsyncTasks.get();
 	}
 
+	@Override
+	public void cancelAllTasks(Plugin plugin) {
+		Validate.notNull(plugin, "plugin is null");
+		// Note: Region and entity tasks cannot be cancelled in bulk, because they are bound to
+		// specific regions and entities. They are bound to the lifetime of the plugin's own
+		// components, which get cleaned up during plugin disable.
+		Bukkit.getGlobalRegionScheduler().cancelTasks(plugin);
+		Bukkit.getAsyncScheduler().cancelTasks(plugin);
+	}
+
 	private static void validatePluginTask(Plugin plugin, Runnable task) {
 		Validate.notNull(plugin, "plugin is null");
 		Validate.notNull(task, "task is null");

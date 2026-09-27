@@ -103,6 +103,18 @@ public class BukkitTaskScheduler implements TaskScheduler {
 		return workers;
 	}
 
+	@Override
+	public void cancelAllTasks(Plugin plugin) {
+		Validate.notNull(plugin, "plugin is null");
+		try {
+			Bukkit.getScheduler().cancelTasks(plugin);
+		} catch (UnsupportedOperationException e) {
+			// The Bukkit scheduler is not available (on Folia). This implementation can still be
+			// active if the platform specific implementation could not be loaded. Cancelling tasks
+			// is best effort during plugin disable, so we ignore this.
+		}
+	}
+
 	private static void validatePluginTask(Plugin plugin, Runnable task) {
 		Validate.notNull(plugin, "plugin is null");
 		Validate.notNull(task, "task is null");
