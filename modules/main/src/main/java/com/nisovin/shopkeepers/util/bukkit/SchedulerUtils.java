@@ -4,15 +4,13 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
-import org.bukkit.Bukkit;
-import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitScheduler;
-import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.scheduler.BukkitWorker;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.util.java.Validate;
+import com.nisovin.shopkeepers.util.task.TaskHandle;
+import com.nisovin.shopkeepers.util.task.TaskScheduler;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 /**
  * Scheduler related utilities.
@@ -24,7 +22,7 @@ public final class SchedulerUtils {
 	 * {@link #runOnMainThreadOrOmit(Plugin, Runnable)}.
 	 * <p>
 	 * If the thread registering the task is already the server's main thread, the task is run
-	 * immediately. Otherwise, it is scheduled using the {@link BukkitScheduler}. If the plugin is
+	 * immediately. Otherwise, it is scheduled using the {@link TaskScheduler}. If the plugin is
 	 * not enabled at the time of task registration, the task is omitted.
 	 * 
 	 * @param plugin
@@ -49,13 +47,7 @@ public final class SchedulerUtils {
 
 	public static int getActiveAsyncTasks(Plugin plugin) {
 		Validate.notNull(plugin, "plugin is null");
-		int workers = 0;
-		for (BukkitWorker worker : Bukkit.getScheduler().getActiveWorkers()) {
-			if (worker.getOwner().equals(plugin)) {
-				workers++;
-			}
-		}
-		return workers;
+		return TaskSchedulers.get().getActiveAsyncTasks(plugin);
 	}
 
 	private static void validatePluginTask(Plugin plugin, Runnable task) {
@@ -69,7 +61,7 @@ public final class SchedulerUtils {
 	 * @return <code>true</code> if currently running on the main thread
 	 */
 	public static boolean isMainThread() {
-		return Bukkit.isPrimaryThread();
+		return TaskSchedulers.get().isGlobalThread();
 	}
 
 	/**
@@ -96,46 +88,30 @@ public final class SchedulerUtils {
 		}
 	}
 
-	public static @Nullable BukkitTask runTaskOrOmit(Plugin plugin, Runnable task) {
+	public static @Nullable TaskHandle runTaskOrOmit(Plugin plugin, Runnable task) {
 		return runTaskLaterOrOmit(plugin, task, 0L);
 	}
 
-	public static @Nullable BukkitTask runTaskLaterOrOmit(
+	public static @Nullable TaskHandle runTaskLaterOrOmit(
 			Plugin plugin,
 			Runnable task,
 			long delay
 	) {
 		validatePluginTask(plugin, task);
-		// Tasks can only be registered while enabled:
-		if (plugin.isEnabled()) {
-			try {
-				return Bukkit.getScheduler().runTaskLater(plugin, task, delay);
-			} catch (IllegalPluginAccessException e) {
-				// Couldn't register task: The plugin got disabled just now.
-			}
-		}
-		return null;
+		return TaskSchedulers.get().runDelayed(plugin, task, delay);
 	}
 
-	public static @Nullable BukkitTask runAsyncTaskOrOmit(Plugin plugin, Runnable task) {
+	public static @Nullable TaskHandle runAsyncTaskOrOmit(Plugin plugin, Runnable task) {
 		return runAsyncTaskLaterOrOmit(plugin, task, 0L);
 	}
 
-	public static @Nullable BukkitTask runAsyncTaskLaterOrOmit(
+	public static @Nullable TaskHandle runAsyncTaskLaterOrOmit(
 			Plugin plugin,
 			Runnable task,
 			long delay
 	) {
 		validatePluginTask(plugin, task);
-		// Tasks can only be registered while enabled:
-		if (plugin.isEnabled()) {
-			try {
-				return Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, task, delay);
-			} catch (IllegalPluginAccessException e) {
-				// Couldn't register task: The plugin got disabled just now.
-			}
-		}
-		return null;
+		return TaskSchedulers.get().runAsyncDelayed(plugin, task, delay);
 	}
 
 	/**

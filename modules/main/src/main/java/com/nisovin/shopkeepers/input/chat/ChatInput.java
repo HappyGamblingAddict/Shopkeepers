@@ -12,6 +12,7 @@ import org.bukkit.plugin.Plugin;
 import com.nisovin.shopkeepers.input.InputManager;
 import com.nisovin.shopkeepers.input.InputRequest;
 import com.nisovin.shopkeepers.util.bukkit.EventUtils;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 /**
  * Manages requests for chat input from players.
@@ -59,7 +60,7 @@ public class ChatInput extends InputManager<String> implements Listener {
 		// Get the message:
 		String message = event.getMessage();
 
-		// Process the request on the server's main thread:
-		Bukkit.getScheduler().runTask(plugin, () -> request.onInput(message));
+		// Process the request on the thread that owns the player:
+		TaskSchedulers.get().runForEntity(plugin, player, () -> request.onInput(message));
 	}
 }

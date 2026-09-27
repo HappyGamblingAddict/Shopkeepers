@@ -74,9 +74,11 @@ import com.nisovin.shopkeepers.ui.SKDefaultUITypes;
 import com.nisovin.shopkeepers.ui.SKUIRegistry;
 import com.nisovin.shopkeepers.ui.SKUISystem;
 import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
+import com.nisovin.shopkeepers.util.bukkit.ServerUtils;
 import com.nisovin.shopkeepers.util.java.ClassUtils;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.logging.Log;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 import com.nisovin.shopkeepers.villagers.RegularVillagers;
 import com.nisovin.shopkeepers.world.ForcingEntitySpawner;
 import com.nisovin.shopkeepers.world.ForcingEntityTeleporter;
@@ -191,7 +193,20 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 
 	private boolean outdatedServer = false;
 	private boolean incompatibleServer = false;
+	private boolean unsupportedServerPlatform = false;
 	private @Nullable ConfigLoadException configLoadError = null; // Null on success
+
+	// Folia replaces the server's single main thread with multiple region and entity threads. The
+	// scheduling layer has already been ported to the regionized schedulers, but the shopkeeper
+	// activation, mob AI and user interface subsystems still assume a single main thread. Until
+	// those are ported, the plugin refuses to enable on Folia instead of running into errors and
+	// potentially corrupting shop data.
+	// Set this to true once the remaining subsystems have been ported.
+	private static final boolean FOLIA_SUPPORT_COMPLETE = false;
+
+	private static final String FOLIA_UNSUPPORTED_MESSAGE = "Folia is not supported yet: The "
+			+ "Shopkeepers plugin is still being ported to Folia's regionized threading model. "
+			+ "See the 'Folia support' section in the plugin's README for the remaining work.";
 
 	private void loadAllPluginClasses() {
 		File pluginJarFile = this.getFile();
@@ -273,6 +288,20 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 			return;
 		}
 
+		// Refuse to run on server platforms that we do not support yet:
+		// This has to happen before anything schedules tasks or registers listeners.
+		if (ServerUtils.isFolia() && !FOLIA_SUPPORT_COMPLETE) {
+			this.unsupportedServerPlatform = true;
+			return;
+		}
+
+		// Initialize the task scheduler for the current server platform:
+		// This has to happen before the first task is scheduled.
+		this.incompatibleServer = !TaskSchedulers.init();
+		if (this.incompatibleServer) {
+			return;
+		}
+
 		// Load config:
 		// Note: The config loading can already depend on Compat functionality (e.g. for item
 		// loading), so Compat must be initialized first.
@@ -324,6 +353,20 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 		// Check if the server version is incompatible:
 		if (this.incompatibleServer) {
 			Log.severe("Incompatible server version: Shopkeepers cannot be enabled.");
+			this.setEnabled(false); // Also calls onDisable
+			return;
+		}
+
+		// Check if the server platform is not supported yet:
+		if (this.unsupportedServerPlatform) {
+			Log.severe(FOLIA_UNSUPPORTED_MESSAGE);
+			this.setEnabled(false); // Also calls onDisable
+			return;
+		}
+
+		// Initialize the task scheduler (if not already done during onLoad):
+		if (!alreadySetUp && !TaskSchedulers.init()) {
+			Log.severe("Could not initialize the task scheduler: Shopkeepers cannot be enabled.");
 			this.setEnabled(false); // Also calls onDisable
 			return;
 		}

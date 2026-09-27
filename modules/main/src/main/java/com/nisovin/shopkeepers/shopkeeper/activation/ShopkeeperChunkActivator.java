@@ -3,10 +3,10 @@ package com.nisovin.shopkeepers.shopkeeper.activation;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
 import org.bukkit.Bukkit;
@@ -16,7 +16,6 @@ import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.HandlerList;
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
@@ -31,6 +30,8 @@ import com.nisovin.shopkeepers.util.bukkit.MutableChunkCoords;
 import com.nisovin.shopkeepers.util.bukkit.TextUtils;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.logging.Log;
+import com.nisovin.shopkeepers.util.task.TaskHandle;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 import com.nisovin.shopkeepers.util.timer.Timer;
 import com.nisovin.shopkeepers.util.timer.Timings;
 
@@ -68,8 +69,15 @@ public class ShopkeeperChunkActivator {
 	private final ShopkeeperSpawner shopkeeperSpawner;
 	private final ChunkActivationListener listener = new ChunkActivationListener(Unsafe.initialized(this));
 
-	private final Map<ChunkCoords, ChunkData> chunks = new HashMap<>();
+	// Note: On Folia, chunk load and unload events are handled by the threads of the respective
+	// regions, so this map is accessed by multiple threads concurrently.
+	private final Map<ChunkCoords, ChunkData> chunks = new ConcurrentHashMap<>();
 
+	// The chunk activation state machine below, i.e. the chunkActivationInProgress flag and the
+	// deferredChunkActivations queue, is guarded by this instance's monitor: Chunk activations are
+	// processed one at a time.
+	// TODO On Folia, this serializes chunk activations across all regions. This should eventually be
+	// replaced with per-region activation state.
 	private boolean chunkActivationInProgress = false;
 	// This does not consider pending delayed chunk activation tasks, but only tracks actual
 	// activation requests while another chunk activation is in progress. The queue is expected to
@@ -150,7 +158,7 @@ public class ShopkeeperChunkActivator {
 		return chunkData;
 	}
 
-	private @Nullable ChunkData removeChunkData(ChunkCoords chunkCoords) {
+	private synchronized @Nullable ChunkData removeChunkData(ChunkCoords chunkCoords) {
 		assert chunkCoords != null;
 		ChunkData chunkData = chunks.remove(chunkCoords);
 		if (chunkData != null) {
@@ -303,7 +311,7 @@ public class ShopkeeperChunkActivator {
 
 		void start() {
 			assert !chunkData.isActive() && !chunkData.isActivationDelayed();
-			BukkitTask task = Bukkit.getScheduler().runTaskLater(
+			TaskHandle task = TaskSchedulers.get().runDelayed(
 					plugin,
 					this,
 					CHUNK_ACTIVATION_DELAY_TICKS
@@ -321,7 +329,7 @@ public class ShopkeeperChunkActivator {
 
 	void activatePendingNearbyChunksDelayed(Player player) {
 		assert player != null;
-		Bukkit.getScheduler().runTask(plugin, new ActivatePendingNearbyChunksTask(player));
+		TaskSchedulers.get().run(plugin, new ActivatePendingNearbyChunksTask(player));
 	}
 
 	private class ActivatePendingNearbyChunksTask implements Runnable {
@@ -376,12 +384,12 @@ public class ShopkeeperChunkActivator {
 		}
 	}
 
-	private boolean isActivationDeferred(ChunkData chunkData) {
+	private synchronized boolean isActivationDeferred(ChunkData chunkData) {
 		return deferredChunkActivations.contains(chunkData);
 	}
 
 	// This also reset's the chunk's 'should-be-active' state.
-	private void cancelDeferredActivation(ChunkData chunkData) {
+	private synchronized void cancelDeferredActivation(ChunkData chunkData) {
 		assert chunkData != null;
 		// Minor optimization: If the chunk is not marked as 'should-be-active', we can assume that
 		// it is not pending a deferred activation.
@@ -391,7 +399,7 @@ public class ShopkeeperChunkActivator {
 		}
 	}
 
-	private void activateChunk(ChunkData chunkData) {
+	private synchronized void activateChunk(ChunkData chunkData) {
 		assert chunkData != null;
 		// Note (SPIGOT-6980): On early versions of 1.18.2, chunks may report to not be loaded
 		// during ChunkLoadEvents, which breaks this and several similar assertions (not so bad),
@@ -497,7 +505,7 @@ public class ShopkeeperChunkActivator {
 		}
 	}
 
-	private void processDeferredChunkActivations() {
+	private synchronized void processDeferredChunkActivations() {
 		ChunkData chunkData;
 		while ((chunkData = deferredChunkActivations.poll()) != null) {
 			// The chunk is removed from the queue when it is deactivated:
@@ -516,7 +524,7 @@ public class ShopkeeperChunkActivator {
 		this.deactivateChunk(chunkData);
 	}
 
-	private void deactivateChunk(ChunkData chunkData) {
+	private synchronized void deactivateChunk(ChunkData chunkData) {
 		assert chunkData != null;
 		ChunkCoords chunkCoords = chunkData.getChunkCoords();
 		if (!chunkData.isActive()) {

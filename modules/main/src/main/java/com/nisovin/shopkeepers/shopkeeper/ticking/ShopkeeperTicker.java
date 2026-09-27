@@ -8,14 +8,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.bukkit.scheduler.BukkitRunnable;
-
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
 import com.nisovin.shopkeepers.debug.DebugOptions;
 import com.nisovin.shopkeepers.shopkeeper.AbstractShopkeeper;
 import com.nisovin.shopkeepers.util.java.CyclicCounter;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.logging.Log;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 public class ShopkeeperTicker {
 
@@ -84,8 +83,10 @@ public class ShopkeeperTicker {
 	}
 
 	private final CyclicCounter activeTickingGroup = new CyclicCounter(TICKING_GROUPS);
-	private boolean currentlyTicking = false;
-	private boolean dirty;
+	// Note: On Folia, shopkeepers get started and stopped ticking from the threads of the respective
+	// regions, while the ticking itself is performed by a global task.
+	private volatile boolean currentlyTicking = false;
+	private volatile boolean dirty;
 
 	// True: Ticking started, False: Ticking stopped
 	// Note: The start/stop-ticking callbacks for these pending changes have already been invoked
@@ -99,7 +100,7 @@ public class ShopkeeperTicker {
 		this.plugin = plugin;
 	}
 
-	public void onEnable() {
+	public synchronized void onEnable() {
 		// Resetting the ticking group counter ensures that shopkeepers retain their ticking group
 		// across reloads (if there are no changes in the order of the loaded shopkeepers). This
 		// ensures that the particle colors of our tick visualization remain the same across reloads
@@ -111,7 +112,7 @@ public class ShopkeeperTicker {
 		this.startShopkeeperTickTask();
 	}
 
-	public void onDisable() {
+	public synchronized void onDisable() {
 		// Usually, there should be no need to clean up the registered ticking shopkeepers here,
 		// since shopkeepers should stop their ticking automatically once they are deactivated.
 		// However, if the plugin is shut down during shopkeeper ticking, we can end up with still
@@ -127,7 +128,7 @@ public class ShopkeeperTicker {
 		}
 	}
 
-	private void ensureEmpty() {
+	private synchronized void ensureEmpty() {
 		boolean anyNonEmptyTickingGroup = tickingGroups.stream()
 				.anyMatch(tickingGroup -> !tickingGroup.getShopkeepers().isEmpty());
 		if (anyNonEmptyTickingGroup) {
@@ -156,7 +157,7 @@ public class ShopkeeperTicker {
 	// TICKING START / STOP
 
 	// This has no effect if the shopkeeper is already ticking.
-	public void startTicking(AbstractShopkeeper shopkeeper) {
+	public synchronized void startTicking(AbstractShopkeeper shopkeeper) {
 		assert shopkeeper != null;
 		if (shopkeeper.isTicking()) return; // Already ticking
 
@@ -179,7 +180,7 @@ public class ShopkeeperTicker {
 	}
 
 	// This has no effect if the shopkeeper is already not ticking.
-	public void stopTicking(AbstractShopkeeper shopkeeper) {
+	public synchronized void stopTicking(AbstractShopkeeper shopkeeper) {
 		assert shopkeeper != null;
 		if (!shopkeeper.isTicking()) return; // Already not ticking
 
@@ -201,14 +202,14 @@ public class ShopkeeperTicker {
 		}
 	}
 
-	private void addShopkeeper(AbstractShopkeeper shopkeeper) {
+	private synchronized void addShopkeeper(AbstractShopkeeper shopkeeper) {
 		assert shopkeeper != null;
 		TickingGroup tickingGroup = this.getTickingGroup(shopkeeper);
 		assert tickingGroup != null;
 		tickingGroup.addShopkeeper(shopkeeper);
 	}
 
-	private void removeShopkeeper(AbstractShopkeeper shopkeeper) {
+	private synchronized void removeShopkeeper(AbstractShopkeeper shopkeeper) {
 		assert shopkeeper != null;
 		TickingGroup tickingGroup = this.getTickingGroup(shopkeeper);
 		assert tickingGroup != null;
@@ -217,16 +218,16 @@ public class ShopkeeperTicker {
 
 	// TICKING
 
-	private void startShopkeeperTickTask() {
+	private synchronized void startShopkeeperTickTask() {
 		new ShopkeeperTickTask().start();
 	}
 
-	private final class ShopkeeperTickTask extends BukkitRunnable {
+	private final class ShopkeeperTickTask implements Runnable {
 
 		private static final int PERIOD = TICKING_PERIOD_TICKS / TICKING_GROUPS;
 
 		void start() {
-			this.runTaskTimer(plugin, PERIOD, PERIOD);
+			TaskSchedulers.get().runTimer(plugin, this, PERIOD, PERIOD);
 		}
 
 		@Override
@@ -235,7 +236,7 @@ public class ShopkeeperTicker {
 		}
 	}
 
-	private void tickShopkeepers() {
+	private synchronized void tickShopkeepers() {
 		dirty = false;
 
 		currentlyTicking = true;

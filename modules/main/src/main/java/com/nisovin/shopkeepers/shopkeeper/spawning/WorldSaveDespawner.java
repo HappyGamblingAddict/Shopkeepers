@@ -2,9 +2,7 @@ package com.nisovin.shopkeepers.shopkeeper.spawning;
 
 import java.util.function.Predicate;
 
-import org.bukkit.Bukkit;
 import org.bukkit.World;
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
@@ -15,6 +13,8 @@ import com.nisovin.shopkeepers.shopkeeper.spawning.ShopkeeperSpawnState.State;
 import com.nisovin.shopkeepers.shopobjects.AbstractShopObjectType;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.logging.Log;
+import com.nisovin.shopkeepers.util.task.TaskHandle;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 /**
  * Handles the temporary despawning and later respawning of shop objects that need to be despawned
@@ -105,7 +105,7 @@ class WorldSaveDespawner {
 	class RespawnShopkeepersAfterWorldSaveTask implements Runnable {
 
 		private final WorldData worldData;
-		private @Nullable BukkitTask task;
+		private @Nullable TaskHandle task;
 
 		RespawnShopkeepersAfterWorldSaveTask(WorldData worldData) {
 			assert worldData != null;
@@ -114,7 +114,7 @@ class WorldSaveDespawner {
 
 		void start() {
 			assert !worldData.isWorldSaveRespawnPending();
-			this.task = Bukkit.getScheduler().runTask(plugin, this);
+			this.task = TaskSchedulers.get().run(plugin, this);
 			worldData.setWorldSaveRespawnTask(this);
 		}
 

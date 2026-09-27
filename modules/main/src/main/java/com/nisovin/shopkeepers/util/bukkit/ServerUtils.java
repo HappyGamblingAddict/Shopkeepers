@@ -11,6 +11,7 @@ import com.nisovin.shopkeepers.api.internal.util.Unsafe;
 public final class ServerUtils {
 
 	private static final boolean IS_PAPER;
+	private static final boolean IS_FOLIA;
 	private static final String MAPPINGS_VERSION;
 
 	static {
@@ -22,6 +23,7 @@ public final class ServerUtils {
 			isPaper = false;
 		}
 		IS_PAPER = isPaper;
+		IS_FOLIA = detectFolia();
 
 		String mappingsVersion;
 		try {
@@ -76,6 +78,27 @@ public final class ServerUtils {
 	 */
 	public static boolean isPaper() {
 		return IS_PAPER;
+	}
+
+	/**
+	 * Checks if the server is running Folia, which replaces the single main thread with multiple
+	 * region and entity threads.
+	 * 
+	 * @return <code>true</code> if the server is running Folia
+	 */
+	public static boolean isFolia() {
+		return IS_FOLIA;
+	}
+
+	private static boolean detectFolia() {
+		// Folia is a Paper fork and therefore also provides the Paper API. The regionized server
+		// implementation is only present on Folia.
+		try {
+			Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+			return true;
+		} catch (ClassNotFoundException e) {
+			return false;
+		}
 	}
 
 	/**

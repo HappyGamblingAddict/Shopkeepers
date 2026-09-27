@@ -45,6 +45,7 @@ import com.nisovin.shopkeepers.util.inventory.InventoryUtils;
 import com.nisovin.shopkeepers.util.inventory.ItemUtils;
 import com.nisovin.shopkeepers.util.java.Lazy;
 import com.nisovin.shopkeepers.util.logging.Log;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 public class TradingView extends View {
 
@@ -265,7 +266,7 @@ public class TradingView extends View {
 		// This needs to happen after the event has been handled, because Minecraft will set the
 		// result slot afterwards:
 		SKUISession uiSession = SKShopkeepersPlugin.getInstance().getUIRegistry().getSession(player);
-		Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
+		TaskSchedulers.get().run(ShopkeepersPlugin.getInstance(), () -> {
 			if (!uiSession.isValid()) return;
 			if (clickEvent.isCancelled()) return;
 			// Logs if it encounters items that are not strictly matching and then clears the result

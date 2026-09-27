@@ -30,6 +30,7 @@ import com.nisovin.shopkeepers.util.inventory.ChestLayout;
 import com.nisovin.shopkeepers.util.inventory.InventoryViewUtils;
 import com.nisovin.shopkeepers.util.inventory.ItemUtils;
 import com.nisovin.shopkeepers.util.java.EnumUtils;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 public class EquipmentEditorView extends View {
 
@@ -194,12 +195,16 @@ public class EquipmentEditorView extends View {
 
 		if (rightClick) {
 			// Clear the equipment slot:
-			Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
-				if (!this.isOpen() || this.abortIfContextInvalid()) return;
+			TaskSchedulers.get().runForEntity(
+					ShopkeepersPlugin.getInstance(),
+					view.getPlayer(),
+					() -> {
+						if (!this.isOpen() || this.abortIfContextInvalid()) return;
 
-				inventory.setItem(rawSlot, this.toEditorEquipmentItem(equipmentSlot, null));
-				onEquipmentChanged(equipmentSlot, null);
-			});
+						inventory.setItem(rawSlot, this.toEditorEquipmentItem(equipmentSlot, null));
+						onEquipmentChanged(equipmentSlot, null);
+					}
+			);
 			return;
 		}
 
@@ -207,24 +212,28 @@ public class EquipmentEditorView extends View {
 		if (leftClick && !ItemUtils.isEmpty(cursorClone)) {
 			assert cursorClone != null;
 			// Place the item from the cursor:
-			Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
-				if (!this.isOpen() || this.abortIfContextInvalid()) return;
+			TaskSchedulers.get().runForEntity(
+					ShopkeepersPlugin.getInstance(),
+					view.getPlayer(),
+					() -> {
+						if (!this.isOpen() || this.abortIfContextInvalid()) return;
 
-				cursorClone.setAmount(1);
+						cursorClone.setAmount(1);
 
-				// Replace placeholder item, if this is one:
-				ItemStack substitutedItem = PlaceholderItems.replaceNonNull(cursorClone);
+						// Replace placeholder item, if this is one:
+						ItemStack substitutedItem = PlaceholderItems.replaceNonNull(cursorClone);
 
-				// Inform about the new equipment item:
-				// No item copy required: The item is already a copy, and for the item in the editor
-				// we create a separate copy subsequently.
-				onEquipmentChanged(equipmentSlot, UnmodifiableItemStack.of(substitutedItem));
+						// Inform about the new equipment item:
+						// No item copy required: The item is already a copy, and for the item in the
+						// editor we create a separate copy subsequently.
+						onEquipmentChanged(equipmentSlot, UnmodifiableItemStack.of(substitutedItem));
 
-				// Update the item in the editor:
-				// This copies the item internally (but irrelevant, because we already create a copy
-				// for the editor item anyway):
-				inventory.setItem(rawSlot, this.toEditorEquipmentItem(equipmentSlot, substitutedItem));
-			});
+						// Update the item in the editor:
+						// This copies the item internally (but irrelevant, since we already create a
+						// copy for the editor item anyway):
+						inventory.setItem(rawSlot, this.toEditorEquipmentItem(equipmentSlot, substitutedItem));
+					}
+			);
 		}
 	}
 
