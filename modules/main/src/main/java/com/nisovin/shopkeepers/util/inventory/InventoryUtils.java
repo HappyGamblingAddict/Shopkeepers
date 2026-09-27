@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 
-import org.bukkit.Bukkit;
 import org.bukkit.block.Block;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.HumanEntity;
@@ -24,6 +23,7 @@ import com.nisovin.shopkeepers.api.util.UnmodifiableItemStack;
 import com.nisovin.shopkeepers.util.annotations.ReadOnly;
 import com.nisovin.shopkeepers.util.annotations.ReadWrite;
 import com.nisovin.shopkeepers.util.java.Validate;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 /**
  * Utility functions related to inventories.
@@ -1022,14 +1022,14 @@ public final class InventoryUtils {
 
 	public static void updateInventoryLater(Player player) {
 		Validate.notNull(player, "player is null");
-		Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), player::updateInventory);
+		TaskSchedulers.get().runForEntity(ShopkeepersPlugin.getInstance(), player, player::updateInventory);
 	}
 
 	// Only closes the player's open inventory view if it is still the specified view after the
 	// delay:
 	public static void closeInventoryDelayed(InventoryView inventoryView) {
 		Validate.notNull(inventoryView, "inventoryView is null");
-		Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
+		TaskSchedulers.get().runForEntity(ShopkeepersPlugin.getInstance(), inventoryView.getPlayer(), () -> {
 			InventoryView openInventoryView = inventoryView.getPlayer().getOpenInventory();
 			if (inventoryView == openInventoryView) {
 				inventoryView.close(); // Same as player.closeInventory()
@@ -1039,7 +1039,11 @@ public final class InventoryUtils {
 
 	public static void closeInventoryDelayed(Player player) {
 		// Cast to Runnable to resolve ambiguity error when compiling against Paper-API:
-		Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), (Runnable) player::closeInventory);
+		TaskSchedulers.get().runForEntity(
+				ShopkeepersPlugin.getInstance(),
+				player,
+				(Runnable) player::closeInventory
+		);
 	}
 
 	// This can for example be used during the handling of inventory interaction events.
@@ -1049,7 +1053,7 @@ public final class InventoryUtils {
 			@ReadOnly @Nullable ItemStack itemStack
 	) {
 		Validate.notNull(inventory, "inventory is null");
-		Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
+		TaskSchedulers.get().run(ShopkeepersPlugin.getInstance(), () -> {
 			inventory.setItem(slot, itemStack); // This copies the item internally
 		});
 	}

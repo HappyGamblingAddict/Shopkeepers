@@ -4,6 +4,21 @@ Date format: (YYYY-MM-DD)
 ## v2.28.2 (TBA)
 ### Supported MC versions: 26.3, 26.2, 26.1.2, 1.21.11, 1.21.10, 1.21.8, 1.21.7, 1.21.6, 1.21.5
 
+* WIP: Experimental Folia support. Tested by the author on Folia 1.21.11 only. Please back up your
+  shop data before trying it, and expect remaining issues.
+  * All task scheduling now goes through a new platform specific `TaskScheduler` abstraction,
+    instead of accessing the `BukkitScheduler` directly. On Folia, the regionized global, region,
+    entity and async schedulers are used. Work that targets a specific player is now scheduled via
+    the player's entity scheduler.
+  * The shared shopkeeper chunk activation and ticking state can now safely be accessed from
+    multiple region threads.
+  * Shopkeeper spawning, shopkeeper ticking and entity AI/gravity are now performed on the region
+    thread that owns the respective chunk, instead of on the global tick thread.
+  * Citizen shopkeepers are disabled on Folia, because the Citizens plugin does not support Folia.
+  * Not ported yet: The user interface, shop containers and sign shopkeepers, and the trade logic
+    for player shops whose container is in a different region than the shopkeeper. See the
+    'Folia support' section in the README.
+
 
 ## v2.28.1 (2026-09-26)
 ### Supported MC versions: 26.3, 26.2, 26.1.2, 1.21.11, 1.21.10, 1.21.8, 1.21.7, 1.21.6, 1.21.5

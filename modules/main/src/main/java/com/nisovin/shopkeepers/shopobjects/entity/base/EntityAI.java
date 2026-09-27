@@ -21,7 +21,6 @@ import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
@@ -35,8 +34,11 @@ import com.nisovin.shopkeepers.util.bukkit.WorldUtils;
 import com.nisovin.shopkeepers.util.java.CyclicCounter;
 import com.nisovin.shopkeepers.util.java.RateLimiter;
 import com.nisovin.shopkeepers.util.java.Validate;
+import com.nisovin.shopkeepers.util.timer.ConcurrentTimings;
 import com.nisovin.shopkeepers.util.timer.Timer;
 import com.nisovin.shopkeepers.util.timer.Timings;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
+import com.nisovin.shopkeepers.util.task.TaskHandle;
 
 /**
  * Handles the gravity and AI behavior, e.g. looking at nearby players, of
@@ -189,7 +191,7 @@ public class EntityAI implements Listener {
 	// Index for fast removal: Shop object -> EntityData
 	private final Map<BaseEntityShopObject<?>, EntityData> shopObjects = new HashMap<>();
 
-	private @Nullable BukkitTask aiTask = null;
+	private @Nullable TaskHandle aiTask = null;
 	private boolean currentlyRunning = false;
 
 	// Statistics:
@@ -204,8 +206,10 @@ public class EntityAI implements Listener {
 	// activations triggered
 	// by player joins and teleports.
 	private final Timer activationTimings = new Timer();
-	private final Timer gravityTimings = new Timer();
-	private final Timer aiTimings = new Timer();
+	// Note: The entities of a chunk are processed on the thread that owns that chunk. Multiple
+	// chunks are processed concurrently, so these cannot use the single-threaded Timer.
+	private final ConcurrentTimings gravityTimings = new ConcurrentTimings();
+	private final ConcurrentTimings aiTimings = new ConcurrentTimings();
 
 	public EntityAI(SKShopkeepersPlugin plugin) {
 		this.plugin = plugin;
@@ -380,7 +384,7 @@ public class EntityAI implements Listener {
 
 		// Start AI task:
 		int tickPeriod = Settings.entityBehaviorTickPeriod;
-		aiTask = Bukkit.getScheduler().runTaskTimer(
+		aiTask = TaskSchedulers.get().runTimer(
 				plugin,
 				new TickTask(),
 				tickPeriod,
@@ -414,9 +418,9 @@ public class EntityAI implements Listener {
 			currentlyRunning = true;
 
 			// Start timings:
+			// Note: The gravity and AI timings are not measured here, because the entities are
+			// processed by concurrent region tasks. Those measure their durations locally instead.
 			totalTimings.start();
-			gravityTimings.startPaused();
-			aiTimings.startPaused();
 
 			// Freshly determine active chunks/entities (near players) every AI_ACTIVATION_TICK_RATE
 			// ticks:
@@ -424,13 +428,11 @@ public class EntityAI implements Listener {
 				updateChunkActivations();
 			}
 
-			// Process entities:
+			// Schedule the processing of the chunks' entities on their respective regions:
 			processEntities();
 
 			// Stop timings:
 			totalTimings.stop();
-			gravityTimings.stop();
-			aiTimings.stop();
 
 			currentlyRunning = false;
 		}
@@ -493,7 +495,7 @@ public class EntityAI implements Listener {
 
 	private void activateNearbyChunksDelayed(Player player) {
 		if (!player.isOnline()) return; // Player is no longer online
-		Bukkit.getScheduler().runTask(plugin, new ActivateNearbyChunksDelayedTask(player));
+		TaskSchedulers.get().run(plugin, new ActivateNearbyChunksDelayedTask(player));
 	}
 
 	private class ActivateNearbyChunksDelayedTask implements Runnable {
@@ -569,20 +571,56 @@ public class EntityAI implements Listener {
 			return;
 		}
 
-		chunks.values().forEach(this::processEntities);
+		// Process the entities of each chunk on the thread that owns that chunk:
+		// Processing an entity accesses it (and the blocks around it), which on Folia is only
+		// allowed on the thread that owns the entity's region. All entities of a chunk are located
+		// within the same region.
+		chunks.forEach(this::processEntities);
 	}
 
-	private void processEntities(ChunkData chunkData) {
+	private void processEntities(ChunkCoords chunkCoords, ChunkData chunkData) {
 		assert chunkData != null;
 		if (!chunkData.activeGravity && !chunkData.activeAI) {
 			// There is no need to process the chunk's entities:
 			return;
 		}
 
-		chunkData.entities.forEach(this::processEntity);
+		// Only schedule the task if the chunk's world is still loaded:
+		World world = Bukkit.getWorld(chunkCoords.getWorldName());
+		if (world == null) return;
+
+		// Note: The y-coordinate is irrelevant for determining the owning region, because Folia
+		// identifies regions by world and chunk coordinates.
+		Location chunkLocation = new Location(
+				world,
+				chunkCoords.getChunkX() << 4,
+				0,
+				chunkCoords.getChunkZ() << 4
+		);
+		TaskSchedulers.get().runAtLocation(plugin, chunkLocation, () -> {
+			// Measure the durations with timers that are local to this task, so that we do not share
+			// any mutable timing state between the concurrently running region tasks:
+			Timer chunkGravityTimings = new Timer();
+			Timer chunkAiTimings = new Timer();
+			chunkGravityTimings.startPaused();
+			chunkAiTimings.startPaused();
+
+			chunkData.entities.forEach((entityData) -> {
+				this.processEntity(entityData, chunkGravityTimings, chunkAiTimings);
+			});
+
+			chunkGravityTimings.stop();
+			chunkAiTimings.stop();
+			gravityTimings.record(chunkGravityTimings.getTotalDurationNanos());
+			aiTimings.record(chunkAiTimings.getTotalDurationNanos());
+		});
 	}
 
-	private void processEntity(EntityData entityData) {
+	private void processEntity(
+			EntityData entityData,
+			Timer gravityTimings,
+			Timer aiTimings
+	) {
 		assert entityData != null;
 		Entity entity = entityData.shopObject.getEntity();
 

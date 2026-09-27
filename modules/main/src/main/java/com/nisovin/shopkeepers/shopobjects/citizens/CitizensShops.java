@@ -23,10 +23,12 @@ import com.nisovin.shopkeepers.config.Settings;
 import com.nisovin.shopkeepers.dependencies.citizens.CitizensDependency;
 import com.nisovin.shopkeepers.shopkeeper.AbstractShopkeeper;
 import com.nisovin.shopkeepers.shopkeeper.registry.SKShopkeeperRegistry;
+import com.nisovin.shopkeepers.util.bukkit.ServerUtils;
 import com.nisovin.shopkeepers.util.bukkit.TextUtils;
 import com.nisovin.shopkeepers.util.java.TimeUtils;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.logging.Log;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.npc.NPC;
@@ -160,6 +162,11 @@ public class CitizensShops {
 		}
 
 		if (!Settings.enableCitizenShops) return; // Feature disabled
+		if (ServerUtils.isFolia()) {
+			// The Citizens plugin is not compatible with Folia's regionized threading model:
+			Log.debug("Citizen shops are not supported on Folia. Disabling Citizen shops.");
+			return;
+		}
 		if (!CitizensDependency.isPluginEnabled()) {
 			Log.debug("Citizen shops enabled, but Citizens plugin not found or disabled.");
 			return;
@@ -180,7 +187,7 @@ public class CitizensShops {
 		citizensListener.onEnable();
 
 		// Delayed to run after shopkeepers and NPCs were loaded:
-		Bukkit.getScheduler().runTaskLater(plugin, new DelayedSetupTask(), 3L);
+		TaskSchedulers.get().runDelayed(plugin, new DelayedSetupTask(), 3L);
 
 		// Enabled:
 		citizensShopsEnabled = true;

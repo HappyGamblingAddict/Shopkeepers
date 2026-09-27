@@ -2,12 +2,14 @@ package com.nisovin.shopkeepers.shopkeeper.spawning;
 
 import java.util.function.Consumer;
 
+import org.bukkit.Location;
 import org.bukkit.plugin.Plugin;
 
 import com.nisovin.shopkeepers.shopkeeper.AbstractShopkeeper;
 import com.nisovin.shopkeepers.shopkeeper.spawning.ShopkeeperSpawnState.State;
 import com.nisovin.shopkeepers.shopobjects.AbstractShopObject;
 import com.nisovin.shopkeepers.util.java.Validate;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 import com.nisovin.shopkeepers.util.taskqueue.TaskQueue;
 
 /**
@@ -30,11 +32,13 @@ public class ShopkeeperSpawnQueue extends TaskQueue<AbstractShopkeeper> {
 	// between 0.05-0.25ms, with an average of around 0.1ms.
 	private static final int SPAWNS_PER_EXECUTION = 6;
 
+	private final Plugin plugin;
 	private final Consumer<? super AbstractShopkeeper> spawner;
 
 	ShopkeeperSpawnQueue(Plugin plugin, Consumer<? super AbstractShopkeeper> spawner) {
 		super(plugin, SPAWN_TASK_PERIOD_TICKS, SPAWNS_PER_EXECUTION);
 		Validate.notNull(spawner, "spawner is null");
+		this.plugin = plugin;
 		this.spawner = spawner;
 	}
 
@@ -94,7 +98,17 @@ public class ShopkeeperSpawnQueue extends TaskQueue<AbstractShopkeeper> {
 		// Reset the shopkeeper's 'queued' state:
 		this.resetQueued(shopkeeper);
 
-		// Spawn the shopkeeper:
-		spawner.accept(shopkeeper);
+		Location location = shopkeeper.getLocation();
+		if (location == null) {
+			// The shopkeeper has no valid location (anymore). It is likely getting removed:
+			return;
+		}
+
+		// Spawn the shopkeeper on the thread that owns its location:
+		// On Folia, spawning involves accessing the world (e.g. to find the ground below the
+		// spawn location), which is only allowed on the thread that owns the region.
+		// Note: The work unit has already been removed from the queue at this point, so we do not
+		// have to keep track of whether the deferred task is still pending.
+		TaskSchedulers.get().runAtLocation(plugin, location, () -> spawner.accept(shopkeeper));
 	}
 }

@@ -8,6 +8,10 @@ softdepend: [Multiverse-Core, My Worlds, Transporter, Towny, WorldGuard, Citizen
 
 main: com.nisovin.shopkeepers.SKShopkeepersPlugin
 api-version: '1.21.5'
+# Allows the plugin to be loaded on Folia. Note that support is not complete yet: The plugin detects
+# Folia and refuses to enable with an explanatory message, until the remaining subsystems have been
+# ported to Folia's regionized threading model.
+folia-supported: true
 
 commands:
     shopkeeper:

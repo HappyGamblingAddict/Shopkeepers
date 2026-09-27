@@ -4,11 +4,12 @@ import java.util.concurrent.TimeUnit;
 
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.api.internal.util.Unsafe;
 import com.nisovin.shopkeepers.util.java.Validate;
+import com.nisovin.shopkeepers.util.task.TaskHandle;
+import com.nisovin.shopkeepers.util.task.TaskSchedulers;
 
 /**
  * Represents a task that is triggered from the server's main thread and of which only one execution
@@ -65,8 +66,8 @@ public abstract class SingletonTask {
 	private final Object executionLock = new Object();
 
 	private State state = State.NOT_RUNNING;
-	// The Bukkit task asynchronously executing this task. Only relevant for async executions.
-	private @Nullable BukkitTask asyncTask = null;
+	// The task asynchronously executing this task. Only relevant for async executions.
+	private @Nullable TaskHandle asyncTask = null;
 	// The (internal) callbacks of the current execution:
 	// Run immediately, possibly asynchronously:
 	private @Nullable Runnable internalCallback = null;
@@ -362,7 +363,15 @@ public abstract class SingletonTask {
 			// TODO Measure the time it takes to schedule the async task as part of the preparation?
 			// Tricky, since in general there is no guarantee about the order in which the task and
 			// any following instructions are executed.
-			this.asyncTask = this.createInternalAsyncTask().runTaskAsynchronously();
+			TaskHandle scheduledTask = this.createInternalAsyncTask().runTaskAsynchronously();
+			if (scheduledTask != null) {
+				this.asyncTask = scheduledTask;
+			} else {
+				// The async task could not be registered (the plugin got disabled just now).
+				// Fall back to a synchronous execution, so that the state stays consistent.
+				this.asyncTask = null;
+				this.executeTask(null);
+			}
 		} else {
 			// Synchronous execution:
 			this.executeTask(null);
@@ -377,13 +386,13 @@ public abstract class SingletonTask {
 	 */
 	public abstract class InternalAsyncTask implements Runnable {
 
-		private @Nullable BukkitTask task; // Captured Bukkit task
+		private @Nullable TaskHandle task; // Captured task handle
 
 		protected InternalAsyncTask() {
 		}
 
-		private BukkitTask runTaskAsynchronously() {
-			this.task = Bukkit.getScheduler().runTaskAsynchronously(plugin, this);
+		private @Nullable TaskHandle runTaskAsynchronously() {
+			this.task = TaskSchedulers.get().runAsync(plugin, this);
 			return task;
 		}
 
@@ -460,7 +469,7 @@ public abstract class SingletonTask {
 	// asyncTask: The async task executing this method. Null for sync executions.
 	// If the async task got cancelled and another execution has already been started, this may not
 	// match the current value of this class' asyncTask variable.
-	private void executeTask(@Nullable BukkitTask asyncTask) {
+	private void executeTask(@Nullable TaskHandle asyncTask) {
 		if (asyncTask != null) {
 			// Asynchronous execution:
 			// Requires the lock for coordination with the main thread, and might have been
