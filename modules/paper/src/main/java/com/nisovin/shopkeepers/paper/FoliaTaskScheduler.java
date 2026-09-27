@@ -171,7 +171,13 @@ public class FoliaTaskScheduler implements TaskScheduler {
 			GlobalRegionScheduler scheduler = Bukkit.getGlobalRegionScheduler();
 			ScheduledTask scheduledTask;
 			if (periodTicks == null) {
-				scheduledTask = scheduler.runDelayed(plugin, (ignored) -> task.run(), delayTicks);
+				// Note: The regionized schedulers reject a delay of 0, so we have to use the
+				// non-delayed variant instead.
+				if (delayTicks <= 0L) {
+					scheduledTask = scheduler.run(plugin, (ignored) -> task.run());
+				} else {
+					scheduledTask = scheduler.runDelayed(plugin, (ignored) -> task.run(), delayTicks);
+				}
 			} else {
 				scheduledTask = scheduler.runAtFixedRate(
 						plugin,
@@ -201,14 +207,25 @@ public class FoliaTaskScheduler implements TaskScheduler {
 
 		try {
 			RegionScheduler scheduler = Bukkit.getRegionScheduler();
-			ScheduledTask scheduledTask = scheduler.runDelayed(
-					plugin,
-					world,
-					location.getBlockX() >> 4,
-					location.getBlockZ() >> 4,
-					(ignored) -> task.run(),
-					delayTicks
-			);
+			ScheduledTask scheduledTask;
+			if (delayTicks <= 0L) {
+				scheduledTask = scheduler.run(
+						plugin,
+						world,
+						location.getBlockX() >> 4,
+						location.getBlockZ() >> 4,
+						(ignored) -> task.run()
+				);
+			} else {
+				scheduledTask = scheduler.runDelayed(
+						plugin,
+						world,
+						location.getBlockX() >> 4,
+						location.getBlockZ() >> 4,
+						(ignored) -> task.run(),
+						delayTicks
+				);
+			}
 			return new FoliaTaskHandle(scheduledTask);
 		} catch (IllegalPluginAccessException e) {
 			// Couldn't register task: The plugin got disabled just now.
@@ -229,13 +246,20 @@ public class FoliaTaskScheduler implements TaskScheduler {
 			EntityScheduler scheduler = entity.getScheduler();
 			// The retired callback is invoked if the entity is removed before the task runs. In that
 			// case, the task must not be run at all.
+			// Note: The regionized schedulers reject a delay of 0, so we have to use the
+			// non-delayed variant instead.
 			// Note: The scheduling call returns null if the entity has already been retired.
-			ScheduledTask scheduledTask = scheduler.runDelayed(
-					plugin,
-					(ignored) -> task.run(),
-					() -> {},
-					delayTicks
-			);
+			ScheduledTask scheduledTask;
+			if (delayTicks <= 0L) {
+				scheduledTask = scheduler.run(plugin, (ignored) -> task.run(), () -> {});
+			} else {
+				scheduledTask = scheduler.runDelayed(
+						plugin,
+						(ignored) -> task.run(),
+						() -> {},
+						delayTicks
+				);
+			}
 			if (scheduledTask == null) return null; // The entity is no longer valid
 			return new FoliaTaskHandle(scheduledTask);
 		} catch (IllegalPluginAccessException e) {

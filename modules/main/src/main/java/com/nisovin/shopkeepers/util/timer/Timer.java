@@ -113,4 +113,16 @@ public class Timer implements Timings {
 	public double getMaxTimeMillis() {
 		return TimeUtils.convert(maxTimeNanos, TimeUnit.NANOSECONDS, TimeUnit.MILLISECONDS);
 	}
+
+	/**
+	 * Gets the accumulated duration of all measured executions.
+	 * <p>
+	 * This is used to transfer the measurements of a task local timer into a
+	 * {@link ConcurrentTimings}, which aggregates the measurements of concurrently running tasks.
+	 * 
+	 * @return the accumulated duration in nanoseconds
+	 */
+	public long getTotalDurationNanos() {
+		return totalTimeNanos;
+	}
 }

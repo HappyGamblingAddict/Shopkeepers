@@ -64,31 +64,33 @@ If you only want to check if a given entity is a shopkeeper, there is no need to
 Folia support
 ----------------
 
-**Folia is not supported yet.** The plugin declares `folia-supported: true`, so it loads on Folia
-without being rejected by the server, but it detects Folia during startup and then refuses to enable
-with an explanatory message. Running the plugin in its current state on Folia would lead to errors
-and could corrupt shop data, because large parts of the plugin still assume a single main thread.
+**Folia support is experimental.** It has only been tested on Folia 1.21.11 so far. Back up your
+shop data before trying it, and expect remaining issues. Please report problems on the issue
+tracker.
 
 Folia replaces the server's single main thread with multiple region and entity threads, which cannot
 be addressed by simply switching to a different scheduling API. The work is split into two parts:
 
-Done in this branch:
+Done:
 * All task scheduling goes through a new `TaskScheduler` abstraction
   (`com.nisovin.shopkeepers.util.task`). There is a `BukkitTaskScheduler` that uses the regular
   `BukkitScheduler` on Spigot and Paper, and a `FoliaTaskScheduler` that uses Folia's global,
   region, entity and async schedulers. Work that targets a specific player is already scheduled via
   the player's entity scheduler.
 * Shopkeeper chunk activation and ticking state is now safe to access from multiple region threads.
+* Shopkeeper spawning, shopkeeper ticking, and entity AI and gravity are performed on the region
+  thread that owns the respective chunk, instead of on the global tick thread.
 * Citizen shopkeepers, which rely on the Citizens plugin, are disabled on Folia.
 
 Still to do:
-* Shopkeeper activation currently serializes all chunk activations on a single lock. This should
-  become per-region activation state.
-* Mob AI, spawner and equipment handling still runs as global tasks and has to be moved to the
-  scheduler of the respective mob.
 * The user interface and inventory handling, shop containers and sign shopkeepers still assume the
   main thread and have to be moved to the owning region.
-* Shutdown handling still cancels tasks via the `BukkitScheduler`, which is unavailable on Folia.
+* The trade logic for player shops whose item container is in a different region than the
+  shopkeeper. This needs a design decision, because the mob and the container cannot be accessed
+  from the same thread.
+* Shopkeeper activation currently serializes all chunk activations on a single lock. This should
+  become per-region activation state.
+* Shutdown handling of region and entity tasks.
 
 Cloning and Building
 ----------------

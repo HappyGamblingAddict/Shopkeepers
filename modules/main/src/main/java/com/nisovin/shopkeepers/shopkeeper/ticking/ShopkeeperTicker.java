@@ -8,7 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.bukkit.Location;
+
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
+import com.nisovin.shopkeepers.api.util.ChunkCoords;
 import com.nisovin.shopkeepers.debug.DebugOptions;
 import com.nisovin.shopkeepers.shopkeeper.AbstractShopkeeper;
 import com.nisovin.shopkeepers.util.java.CyclicCounter;
@@ -237,11 +240,12 @@ public class ShopkeeperTicker {
 	}
 
 	private synchronized void tickShopkeepers() {
-		dirty = false;
-
 		currentlyTicking = true;
 		TickingGroup tickingGroup = this.getTickingGroup(activeTickingGroup.getValue());
-		tickingGroup.getShopkeepers().forEach(this::tickShopkeeper);
+		// We need a snapshot, because the ticking below may modify the ticking group:
+		Collection<? extends AbstractShopkeeper> shopkeepers = new ArrayList<>(
+				tickingGroup.getShopkeepers()
+		);
 		currentlyTicking = false;
 
 		// Process pending shopkeeper ticking registration changes:
@@ -254,11 +258,38 @@ public class ShopkeeperTicker {
 		});
 		pendingTickingChanges.clear();
 
-		// Trigger a delayed save if any of the shopkeepers got marked as dirty or deleted during
-		// the ticking:
-		if (dirty) {
-			plugin.getShopkeeperStorage().saveDelayed();
+		// Group the shopkeepers by the chunk they are located in:
+		// On Folia, ticking a shopkeeper accesses the world, which is only allowed on the thread that
+		// owns the respective region. We therefore tick the shopkeepers of each chunk on the thread
+		// that owns that chunk.
+		Map<ChunkCoords, List<AbstractShopkeeper>> shopkeepersByChunk = new LinkedHashMap<>();
+		for (AbstractShopkeeper shopkeeper : shopkeepers) {
+			Location location = shopkeeper.getLocation();
+			ChunkCoords chunkCoords = shopkeeper.getLastChunkCoords();
+			if (location == null || chunkCoords == null) {
+				// A shopkeeper without a location does not access the world: Tick it directly.
+				this.tickShopkeeper(shopkeeper);
+				continue;
+			}
+
+			shopkeepersByChunk.computeIfAbsent(chunkCoords, (key) -> new ArrayList<>()).add(shopkeeper);
 		}
+
+		shopkeepersByChunk.forEach((chunkCoords, chunkShopkeepers) -> {
+			// All shopkeepers of a chunk are located within the same region, so we can use any of
+			// their locations to schedule the task:
+			Location location = chunkShopkeepers.get(0).getLocation();
+			assert location != null;
+			TaskSchedulers.get().runAtLocation(plugin, location, () -> {
+				chunkShopkeepers.forEach(this::tickShopkeeper);
+
+				// If any of the shopkeepers got marked as dirty or deleted during the ticking:
+				// Subsequently trigger a delayed save of the storage.
+				if (dirty) {
+					plugin.getShopkeeperStorage().saveDelayed();
+				}
+			});
+		});
 
 		// Update the active ticking group:
 		activeTickingGroup.getAndIncrement();

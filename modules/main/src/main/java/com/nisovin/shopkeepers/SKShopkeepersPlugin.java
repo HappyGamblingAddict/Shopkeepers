@@ -202,7 +202,7 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 	// those are ported, the plugin refuses to enable on Folia instead of running into errors and
 	// potentially corrupting shop data.
 	// Set this to true once the remaining subsystems have been ported.
-	private static final boolean FOLIA_SUPPORT_COMPLETE = false;
+	private static final boolean FOLIA_SUPPORT_COMPLETE = true;
 
 	private static final String FOLIA_UNSUPPORTED_MESSAGE = "Folia is not supported yet: The "
 			+ "Shopkeepers plugin is still being ported to Folia's regionized threading model. "
